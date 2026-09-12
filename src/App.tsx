@@ -27,7 +27,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 export default function App() {
   const [data, setData] = useState<GameData>(() => {
-    const saved = localStorage.getItem('flipquest-game');
+    const saved = localStorage.getItem('manarquest-game') ?? localStorage.getItem('manaquest-game') ?? localStorage.getItem('flipquest-game');
     if (saved) try { return JSON.parse(saved) as GameData; } catch { /* keep starter */ }
     return starter;
   });
@@ -37,9 +37,10 @@ export default function App() {
   const [scores, setScores] = useState<Record<string, number>>({});
   const [finished, setFinished] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('flipquest-game', JSON.stringify(data));
+    localStorage.setItem('manarquest-game', JSON.stringify(data));
   }, [data]);
 
   useEffect(() => {
@@ -73,15 +74,20 @@ export default function App() {
   }, [data.players, scores]);
 
   const markAnswer = (correct: boolean) => {
-    if (!current) return;
+    if (!current || feedback) return;
+    setFeedback(correct ? 'correct' : 'wrong');
     if (correct) setScores((s) => ({ ...s, [current.playerId]: (s[current.playerId] || 0) + 1 }));
-    if (index >= data.questions.length - 1) setTimeout(() => setFinished(true), 260);
-    else setTimeout(() => { setIndex((i) => i + 1); setRevealed(false); }, 260);
+    if (index >= data.questions.length - 1) setTimeout(() => { setFeedback(null); setFinished(true); }, 720);
+    else setTimeout(() => { setIndex((i) => i + 1); setRevealed(false); setFeedback(null); }, 720);
   };
 
-  const resetGame = () => { setIndex(0); setScores({}); setRevealed(false); setFinished(false); };
+  const resetGame = () => { setIndex(0); setScores({}); setRevealed(false); setFinished(false); setFeedback(null); };
   const updateQuestion = (id: string, field: keyof Question, value: string) =>
     setData((d) => ({ ...d, questions: d.questions.map((q) => q.id === id ? { ...q, [field]: value } : q) }));
+  const chooseAnsweringPlayer = (playerId: string) => {
+    if (!current) return;
+    updateQuestion(current.id, 'playerId', playerId);
+  };
   const addQuestion = () => {
     const q = { id: uid(), prompt: 'Type your question', answer: 'Type the answer', playerId: data.players[0]?.id || '' };
     setData((d) => ({ ...d, questions: [...d.questions, q] }));
@@ -94,7 +100,7 @@ export default function App() {
 
   return <main className="app-shell">
     <header className="topbar">
-      <button className="brand" onClick={() => setView('play')} aria-label="FlipQuest home"><span className="brand-mark"><Sparkles size={20}/></span><span>Flip<span>Quest</span></span></button>
+      <button className="brand" onClick={() => setView('play')} aria-label="ManarQuest home"><span className="brand-mark"><Sparkles size={20}/></span><span>Manar<span>Quest</span></span></button>
       <nav aria-label="Main navigation">
         <button className={view === 'play' ? 'nav-active' : ''} onClick={() => setView('play')}><Play size={17} fill="currentColor"/> Play game</button>
         <button className={view === 'dashboard' ? 'nav-active' : ''} onClick={() => setView('dashboard')}><LayoutDashboard size={17}/> Dashboard</button>
@@ -103,17 +109,21 @@ export default function App() {
     </header>
 
     {view === 'play' ? <section className="game-page">
-      <div className="game-heading"><div><p className="eyebrow"><span>●</span> LIVE GAME</p><h1>{data.title}</h1></div><button className="edit-game" onClick={() => setView('dashboard')}><PencilLine size={16}/> Edit game</button></div>
+      <div className="game-heading"><div><p className="eyebrow"><span>●</span> LIVE GAME</p><h1>{data.title}</h1></div><div className="game-heading-actions"><button className="reset-button" onClick={resetGame}><RotateCcw size={16}/> Reset game &amp; scores</button><button className="edit-game" onClick={() => setView('dashboard')}><PencilLine size={16}/> Edit game</button></div></div>
       <div className="scoreboard">{data.players.map((player, i) => <div className={`score-pill ${player.id === currentPlayer?.id ? 'is-turn' : ''}`} key={player.id} style={{ '--player': player.color } as React.CSSProperties}><span className="avatar">{player.name.slice(0,1).toUpperCase()}</span><div><small>{player.id === currentPlayer?.id ? 'YOUR TURN' : `PLAYER ${i+1}`}</small><strong>{player.name}</strong></div><b>{scores[player.id] || 0}</b></div>)}</div>
+      <div className="answering-picker" aria-label="Choose the player answering this question">
+        <div className="answering-label"><span className="answering-spark"><Sparkles size={16}/></span><div><strong>Who’s answering?</strong><small>Pick a player for this card</small></div></div>
+        <div className="answering-options">{data.players.map((player)=><button key={player.id} className={player.id===currentPlayer?.id?'selected':''} style={{'--player':player.color} as React.CSSProperties} onClick={()=>chooseAnsweringPlayer(player.id)} aria-pressed={player.id===currentPlayer?.id}><span>{player.name.slice(0,1).toUpperCase()}</span>{player.name}{player.id===currentPlayer?.id&&<Check size={15}/>}</button>)}</div>
+      </div>
       <div className="progress-row"><span>Question {Math.min(index+1,data.questions.length)} of {data.questions.length}</span><div className="progress-track"><i style={{width:`${data.questions.length ? ((index+1)/data.questions.length)*100 : 0}%`}}/></div><span>{data.questions.length ? Math.round(((index+1)/data.questions.length)*100) : 0}%</span></div>
       {current ? <div className="card-stage">
         <button className="side-arrow" aria-label="Previous card" disabled={index===0} onClick={()=>{setIndex(index-1);setRevealed(false)}}><ChevronLeft/></button>
-        <button className={`flash-card ${revealed?'revealed':''}`} onClick={()=>setRevealed(!revealed)} aria-label="Flip flash card">
+        <button className={`flash-card ${revealed?'revealed':''} ${feedback==='correct'?'feedback-correct':''} ${feedback==='wrong'?'feedback-wrong':''}`} onClick={()=>setRevealed(!revealed)} aria-label="Flip flash card">
           <span className="card-corner top">★</span><span className="card-corner bottom">★</span>{current.image&&<img src={current.image} alt="Question clue"/>}<span className="question-badge"><CircleHelp size={15}/> {revealed?'ANSWER':'QUESTION'}</span><strong>{revealed?current.answer:current.prompt}</strong><small><RotateCcw size={14}/> Tap card to {revealed?'see question':'reveal answer'}</small>
         </button>
         <button className="side-arrow" aria-label="Next card" disabled={index>=data.questions.length-1} onClick={()=>{setIndex(index+1);setRevealed(false)}}><ChevronRight/></button>
       </div>:<div className="empty-card">Add your first question in the dashboard.</div>}
-      <div className="answer-actions"><button className="wrong" onClick={()=>markAnswer(false)} disabled={!current}><span><X/></span><div><strong>Not quite</strong><small>Keep trying!</small></div></button><button className="correct" onClick={()=>markAnswer(true)} disabled={!current}><span><Check/></span><div><strong>Got it!</strong><small>+1 point</small></div></button></div>
+      <div className="answer-actions"><button className="wrong" onClick={()=>markAnswer(false)} disabled={!current||!!feedback}><span><X/></span><div><strong>Not quite</strong><small>Keep trying!</small></div></button><button className="correct" onClick={()=>markAnswer(true)} disabled={!current||!!feedback}><span><Check/></span><div><strong>Got it!</strong><small>+1 point</small></div></button></div>
       <p className="keyboard-hint">Teacher controls · flip the card, then choose the result</p>
     </section> : <section className="dashboard-page">
       <div className="dashboard-title"><div><button className="back" onClick={()=>setView('play')}><ArrowLeft size={17}/> Back to game</button><h1>Game builder</h1><p>Make this round completely yours. Everything saves on this device.</p></div><button className="play-now" onClick={()=>{resetGame();setView('play')}}><Play size={17} fill="currentColor"/> Play this game</button></div>
